@@ -1,0 +1,225 @@
+<div>
+  <header><h3>Events</h3></header>
+  <article id="thermo_events">
+    <div class="spinner" style="margin: 100px auto;">
+      <div class="spinner-point"></div>
+      <div class="spinner-point"></div>
+      <div class="spinner-point"></div>
+      <div class="spinner-point"></div>
+      <div class="spinner-point"></div>
+      <div class="spinner-point"></div>
+
+      <div class="spinner-line"></div>
+      <div class="spinner-line"></div>
+      <div class="spinner-line"></div>
+      <div class="spinner-line"></div>
+      <div class="spinner-line"></div>
+      <div class="spinner-line"></div>
+    </div>
+  </article>
+</div>
+
+<script type="text/javascript">
+  class ThermoEvents {
+    constructor(widget) {
+      this.limit = 10
+      this.widget = widget
+      this.events = []
+
+      setInterval(this.loadEvents.bind(this), 5000)
+      this.loadEvents()
+    }
+
+    loadEvents() {
+      api.get(`/api/events?limit=${this.limit}`).then((events) => {
+        this.removeSpinner()
+
+        events.reverse()
+
+        for (const e of events) {
+          if (!this.isEventExist(e))  {
+            this.renderEvent(e)
+            this.removeOldEvents()
+          }
+        }
+
+        this.events = events
+      })
+    }
+
+    removeSpinner() {
+      const spinner = this.widget.querySelector('.spinner')
+      if (spinner) this.widget.removeChild(spinner)
+    }
+
+    isEventExist(e) {
+      for (const _e of this.events) {
+        if (_e.id == e.id) return true
+      }
+      return false
+    }
+
+    removeOldEvents() {
+      while (this.widget.children.length > this.limit) {
+        let child = this.widget.children[this.limit]
+        this.widget.removeChild(child)
+      }
+    }
+
+    timefmt(e) {
+      return moment.unix(e.time_to).format('HH:mm:ss')
+    }
+
+    renderEvent(e) {
+      // let age = ''
+      // let gender = ''
+
+      // if (e.items.length > 0) {
+      //   const face = e.items[0]
+      //   if (face.items) {
+      //     for (const subitem of face.items) {
+      //       if (subitem.type == 'age') age = subitem.name
+      //       if (subitem.type == 'gender') gender = subitem.name
+      //     }
+      //   }
+      // }
+
+      //if (age) age = `<span class='thermoevent_tag'>${age}</span>`
+      //if (gender) gender = `<span class='thermoevent_tag'>${gender}</span>`
+
+      let name = e.name || e.type
+      if (!name) name = `person #${e.id}`
+      // if (name == 'face') name = `Unknown Person #${e.id}`
+
+      const div = document.createElement('div')
+      div.className = `thermoevent flashlight`
+      div.innerHTML = `<span class='thermoevent_time info'>${this.timefmt(e)}</span>`
+
+
+      if (e.frame) {
+        div.appendChild(this.renderEventImage(e.frame))
+      }
+
+      if (e.images && e.images.length > 0) {
+        div.appendChild(this.renderEventImage(e.images[0]))
+      }
+      
+      // if (e.images && e.images.length > 0) {
+      //   div.appendChild(this.renderEventImage(e.images[0]))
+      //   // for (const src of e.images) {          
+      //   //   div.appendChild(this.renderEventImage(src))
+      //   // }
+      // }else if (e.frame) {
+      //   div.appendChild(this.renderEventImage(e.frame))
+      // }
+
+      const table = document.createElement('table')
+      table.className = "thermoevent_text"
+      table.appendChild(this.renderEventTextRow("Name", name))
+      if (e.status) table.appendChild(this.renderEventTextRow("Status", e.status, e.state))
+
+      if (e.items.length == 1) {
+        const item = e.items[0]
+        if (item.attributes) {
+          for (const attr in item.attributes) {
+            table.appendChild(this.renderEventTextRow(attr, item.attributes[attr]))
+          }
+        }
+
+        if (item.items) {
+          for (const subitem of item.items) {
+            table.appendChild(this.renderEventTextRow(subitem.type, subitem.name, subitem.state))
+          }
+        }
+
+      }
+
+     
+
+      div.appendChild(table)
+
+      if (this.widget.children.length == 0) this.widget.appendChild(div)
+      else this.widget.insertBefore(div, this.widget.children[0])
+    }
+
+    renderEventImage(src) {
+      const div = document.createElement("div")
+      div.className = "thermoevent_image-container"
+      div.style.backgroundImage = `url(/${encodeURI(src)})`
+      return div
+    }
+
+    renderEventTextRow(key, val, className) {
+      const tr = document.createElement('tr')
+      tr.innerHTML = `<td class='thermoevent_label'>${key}</td><td class='${className||""}'><span class='thermoevent_tag'>${val}</span></td>`
+      return tr
+    }
+  }
+
+  new ThermoEvents(thermo_events)
+</script>
+
+<style type="text/css">
+  #thermo_events {
+    max-height: calc(100vh - 250px);
+    min-height: 400px;
+  }
+  .thermoevent {
+    display: flex;
+    flex-flow: row wrap;
+    padding: 10px 0 0 10px;
+    border-bottom: 1px solid rgba(255,255,255,.05);
+  }
+  .thermoevent_image-container{
+    max-width: 120px;
+    height: 120px; 
+    width: 120px;
+    border-radius: 3px; 
+    overflow: hidden; 
+    margin: 0px 10px 10px 0; 
+    text-align: center; 
+    background-size: cover;
+    background-position: center;
+    flex: 1 100px;
+  }
+  
+  .thermoevent_text {
+    /*width: 120px;
+    min-width: 120px;*/
+    /*max-width: 100%;*/
+    height: 120px;
+    /*width: 100%;*/
+    display: grid;
+    background: rgba(0,0,0,.1);
+    padding: 5px;
+    border-radius: 3px;
+    margin: 0px 10px 10px 0; 
+    flex: 1 200px;
+
+  }
+  .thermoevent_label {
+    text-transform: capitalize;
+    width: 70px;
+    opacity: 0.8;
+  }
+  .termoevent_value{
+    text-transform: capitalize;
+  }
+  .thermoevent_tag {
+    background: rgba(255, 255, 255, 0.08);
+    padding: 3px 5px;
+    border-radius: 3px;
+  }
+  #thermo_events .flashlight::after {
+    animation: flashlight 0.5s linear;
+  }
+
+  .thermoevent_time {
+    position: absolute;
+    top: 97px;
+    left: 11px;
+    z-index: 10;
+    background: rgba(0,0,0,.5);
+    padding: 2.5px 5px;
+  }
+</style>
