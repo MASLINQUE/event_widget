@@ -1,0 +1,272 @@
+<div id="wgtleft">
+  <div class="rs-row">
+    <!-- cameras -->
+    <div class="rs-col rs-col-md-12">
+      <label class="wgtleft-cameras-label">Cameras</label>
+      <select class="wgtleft-select wgtleft-cameras rs-picker-input">
+        <option></option>
+      </select>
+    </div>
+    <!-- schemes -->
+    <div class="rs-col rs-col-md-12">
+      <label class="wgtleft-schemes-label">Analytics</label>
+      <select class="wgtleft-select wgtleft-schemes rs-picker-input">
+        <option></option>
+      </select>
+    </div>
+  </div>
+
+  <!-- player -->
+  <div class="camera-player">
+    <img class="wgtleft-player hidden" />
+    <div class="camera-canvas"></div>
+    <div class="camera-canvas-status hidden"></div>
+  </div>
+
+  <div class="wgtleft-footer rs-btn-toolbar" role="toolbar" align='right'>
+    <button class="rs-btn rs-btn-primary wgtleft-submit hidden" disabled>Create Event</button>
+  </div>
+</div>
+
+<script type="text/javascript">
+  var schemes = []
+  var cameras = []
+
+  var camSelector = wgtleft.querySelector('.wgtleft-cameras')
+  var scmSelector = wgtleft.querySelector('.wgtleft-schemes')
+  var player = wgtleft.querySelector('.wgtleft-player')
+  var canvas = wgtleft.querySelector('.camera-canvas')
+  var astatus = wgtleft.querySelector('.camera-canvas-status')
+  var submit = wgtleft.querySelector('.wgtleft-submit')
+
+
+  // load state from localStorage
+  var skey = 'wgtleft'
+  var _data = localStorage.getItem(skey)
+  var data = JSON.parse(_data) || { camera: 0, scheme: 0 }
+  if (data.camera) camSelector.value = data.camera
+  if (data.scheme) scmSelector.value = data.scheme
+
+
+  // when camera selector change value...
+  camSelector.onchange = function (e) {
+    data.camera = Number(camSelector.value)
+    if (!data.camera) {
+      player.src = ''
+      player.classList.add('hidden')
+      return
+    }
+
+    var cam = cameras.find((cam) => cam.id === data.camera)
+    if (!cam) return
+
+    // set img src
+    player.src = cam.stream_path
+    player.classList.remove('hidden')
+
+    // remove schemes options
+    for (var i = 0; i < scmSelector.options.length;) {
+      scmSelector.options.remove(i)
+    }
+
+    // add blank option
+    scmSelector.options.add(new Option())
+
+    // set new schemes options
+    schemes.forEach((scm) => {
+      if (!cam.schemes_id.includes(scm.id)) return
+      scmSelector.options.add(new Option(scm.name, scm.id))
+    })
+    if (data.scheme) {
+      scmSelector.value = data.scheme
+      scmSelector.dispatchEvent(new Event('change'))
+    }
+
+    // save state to the localStorage
+    localStorage.setItem(skey, JSON.stringify(data))
+  }
+
+  scmSelector.onchange = function (e) {
+    data.scheme = Number(scmSelector.value)
+    if (data.scheme) submit.classList.remove('hidden')
+
+    // save state to the localStorage
+    localStorage.setItem(skey, JSON.stringify(data))
+  }
+
+  // load schemes
+  RTMIP.schemes().then((resp) => (schemes = resp))
+
+  // load cameras
+  RTMIP.cameras().then((resp) => {
+    cameras = resp.filter((cam) => cam.enabled)
+    cameras.forEach((cam) =>
+      camSelector.options.add(new Option(cam.name, cam.id))
+    )
+
+    if (data.camera) {
+      camSelector.value = data.camera
+      camSelector.dispatchEvent(new Event('change'))
+    }
+  })
+
+
+  // request analytics results
+  var d = undefined
+  getBBoxes = function () {
+    if (!data.camera) {
+      window.setTimeout(getBBoxes, 1000)
+      return
+    }
+
+    RTMIP.cameraDetected(data.camera, {}).then((detected) => {
+      if (data.scheme) {
+        d = detected.find((d) => d.analytics.id === data.scheme)
+        renderBBoxes(d)
+      } else {
+        renderBBoxes()
+      }
+
+      window.setTimeout(getBBoxes, 1000)
+    })
+  }
+  getBBoxes()
+
+  // render bboxes
+  renderBBoxes = function (d) {
+    canvas.innerHTML = ''
+
+    if (!d) {
+      submit.disabled = true
+      return
+    }
+    submit.disabled = false
+
+    if (d.status) {
+      astatus.classList.remove('hidden')
+      astatus.innerHTML = d.status
+      astatus.dataset.state = d.state
+    } else {
+      astatus.classList.add('hidden')
+    }
+
+    d.items.forEach((item) => {
+      var bbox = document.createElement('div')
+      bbox.className = 'bbox'
+      bbox.dataset.state = item.state
+      bbox.style.left = item.bbox[0] * 100 + '%'
+      bbox.style.top = item.bbox[1] * 100 + '%'
+      bbox.style.width = item.bbox[2] * 100 + '%'
+      bbox.style.height = item.bbox[3] * 100 + '%'
+
+      bbox.innerHTML = `
+        <div class='bbox-texts'>
+          <div class='bbox-field'><div class='bbox-text'>${item.type}${item.prop ? ` ${item.prop * 100}%` : ''}</div></div>
+        </div>
+      `
+
+      canvas.appendChild(bbox)
+    })
+  }
+
+  submit.onclick = function () {
+    if (!d) return
+
+    var time = Math.round(new Date().getTime() / 1000)
+
+    var event = {
+      frame: getFrameData(),
+
+      time_at: time,
+      time_to: time,
+      sector: d.camera.sector,
+      camera: d.camera.name,
+      camera_id: d.camera.id,
+      analytics: d.analytics.name,
+      analytics_id: d.analytics.id,
+
+      items: d.items,
+      texts: d.texts,
+
+      regions: d.regions,
+      lines: d.lines,
+      status: d.status,
+      state: d.state,
+      alert: d.alert,
+    }
+
+    if (d.items && d.items.length === 1) {
+      var item = d.items[0]
+      if (item.profile) {
+        event.profile = item.profile
+        event.profile_id = item.profile.id
+        event.group = item.profile.group
+      }
+      if (item.car) {
+        event.car = item.car
+        event.car_id = item.car.id
+        event.group = item.car.group
+      }
+    }
+
+    RTMIP.POST('/events', event).then(success).catch(alert)
+  }
+
+
+
+  getFrameData = function () {
+    var c = document.createElement('canvas');
+    c.height = player.naturalHeight;
+    c.width = player.naturalWidth;
+    var ctx = c.getContext('2d');
+
+    ctx.drawImage(player, 0, 0, c.width, c.height);
+
+    var imgData = c.toDataURL("image/jpeg")
+    return imgData.replace('data:image/jpeg;base64,', '')
+  }
+</script>
+
+<script type="text/javascript">
+  // localization
+  wgtleft.querySelector('.wgtleft-cameras-label').innerHTML =
+    i18n.t('cameras.title')
+  wgtleft.querySelector('.wgtleft-schemes-label').innerHTML =
+    i18n.t('analytics.title')
+  wgtleft.querySelector('.wgtleft-submit').innerHTML = i18n.t("analytics.event")
+</script>
+
+<style type="text/css">
+  #wgtleft .rs-row {
+    margin: 10px 0;
+  }
+
+  .wgtleft-select {
+    padding: 8px;
+    font-size: 16px;
+    width: 100%;
+  }
+
+  #wgtleft .camera-player {
+    margin-bottom: 5px;
+  }
+
+  .wgtleft-player {
+    width: 100%;
+    min-height: 10px;
+    display: block;
+    border-radius: 5px;
+  }
+
+  #wgtleft .camera-canvas-status {
+    top: 5px;
+  }
+
+  .wgtleft-footer {
+    margin: 10px 0 5px 0;
+  }
+
+  .hidden {
+    display: none;
+  }
+</style>

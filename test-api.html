@@ -2,10 +2,12 @@
 
 <script type="text/javascript">
   container = document.getElementById('cameras-count')
-	
-	RTMIP.cameras().then((cameras)=>{
-		container.innerHTML = cameras.length + " cameras"
-	})
+	console.log(RTMIP)
+
+
+  RTMIP.cameras().then((cameras)=>{
+    container.innerHTML = cameras
+  })
 </script>
 
 <style type="text/css">
